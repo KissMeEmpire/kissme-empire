@@ -1,130 +1,111 @@
-import os, json, time, hmac, hashlib, sqlite3
-from urllib.parse import parse_qsl
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+import os,json,hmac,hashlib,sqlite3,time
 from pathlib import Path
+from urllib.parse import parse_qsl
+from fastapi import FastAPI,HTTPException,Request
+from fastapi.responses import FileResponse
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-DB_PATH = os.getenv("DB_PATH", "kissme_empire.sqlite3")
-WEB_DIR = Path(__file__).parent / "web"
-app = FastAPI(title="KissMe Empire API")
-app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+ROOT=Path(__file__).parent
+DB=os.getenv("DB_PATH",str(ROOT/"game.db"))
+TOKEN=os.getenv("BOT_TOKEN","")
+app=FastAPI(title="KissMe Empire 2.0")
 
-BUSINESSES = [
-    {"cost": 500, "profit": 3}, {"cost": 2500, "profit": 12},
-    {"cost": 12000, "profit": 65}, {"cost": 65000, "profit": 350},
-]
-ENERGY_MAX = 500
+def connect():
+    c=sqlite3.connect(DB); c.row_factory=sqlite3.Row; return c
 
-def db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+with connect() as c:
+    c.execute('''CREATE TABLE IF NOT EXISTS players(
+    uid TEXT PRIMARY KEY, username TEXT DEFAULT '', language TEXT DEFAULT 'ru',
+    balance INTEGER DEFAULT 1000, energy INTEGER DEFAULT 1000, max_energy INTEGER DEFAULT 1000,
+    level INTEGER DEFAULT 1, xp INTEGER DEFAULT 0, last_energy INTEGER DEFAULT 0,
+    businesses TEXT DEFAULT '{}', upgrades TEXT DEFAULT '{}', unlocked TEXT DEFAULT '["city"]')''')
+    c.execute('CREATE TABLE IF NOT EXISTS daily(uid TEXT PRIMARY KEY, claimed INTEGER)')
 
-def init_db():
-    with db() as c:
-        c.execute("""CREATE TABLE IF NOT EXISTS players(
-            user_id INTEGER PRIMARY KEY, username TEXT, first_name TEXT,
-            coins REAL NOT NULL DEFAULT 1000, energy REAL NOT NULL DEFAULT 500,
-            tap_power INTEGER NOT NULL DEFAULT 1, owned TEXT NOT NULL DEFAULT '[0,0,0,0]',
-            updated REAL NOT NULL DEFAULT 0)""")
-
-def verify_init_data(init_data: str):
-    if not BOT_TOKEN:
-        raise HTTPException(503, "BOT_TOKEN is not configured. Set it in the server environment.")
-    if not init_data:
-        raise HTTPException(401, "Open the game from its Telegram bot.")
+def user_from(init):
+    if not TOKEN: return {"id":"preview","username":"Preview"}
     try:
-        pairs = dict(parse_qsl(init_data, keep_blank_values=True))
-        received_hash = pairs.pop("hash")
-        auth_date = int(pairs.get("auth_date", "0"))
-    except Exception:
-        raise HTTPException(401, "Invalid Telegram initData")
-    if time.time() - auth_date > 86400:
-        raise HTTPException(401, "Telegram session expired. Reopen the Mini App.")
-    data_check = "\n".join(f"{k}={v}" for k,v in sorted(pairs.items()))
-    secret = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
-    expected = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, received_hash):
-        raise HTTPException(401, "Telegram signature check failed")
-    try:
-        user = json.loads(pairs["user"])
-        return user
-    except Exception:
-        raise HTTPException(401, "Telegram user data missing")
+        d=dict(parse_qsl(init,keep_blank_values=True)); h=d.pop("hash")
+        check="\n".join(f"{k}={v}" for k,v in sorted(d.items()))
+        secret=hmac.new(b"WebAppData",TOKEN.encode(),hashlib.sha256).digest()
+        if not hmac.compare_digest(h,hmac.new(secret,check.encode(),hashlib.sha256).hexdigest()): return None
+        u=json.loads(d["user"]); return u if u.get("id") else None
+    except Exception: return None
 
-def get_player(user):
-    uid = int(user["id"])
-    now = time.time()
-    with db() as c:
-        row = c.execute("SELECT * FROM players WHERE user_id=?", (uid,)).fetchone()
-        if row is None:
-            c.execute("INSERT INTO players(user_id,username,first_name,updated) VALUES(?,?,?,?)",
-                      (uid, user.get("username",""), user.get("first_name","Player"), now))
-            row = c.execute("SELECT * FROM players WHERE user_id=?", (uid,)).fetchone()
-        elapsed = max(0, min(3600, now - row["updated"]))
-        owned = json.loads(row["owned"])
-        income = sum(owned[i] * BUSINESSES[i]["profit"] for i in range(4))
-        coins = row["coins"] + income * elapsed
-        energy = min(ENERGY_MAX, row["energy"] + elapsed * 2)
-        c.execute("UPDATE players SET coins=?,energy=?,updated=? WHERE user_id=?", (coins, energy, now, uid))
-        row = c.execute("SELECT * FROM players WHERE user_id=?", (uid,)).fetchone()
-    return row
+def state(u):
+    uid=str(u["id"]); now=int(time.time())
+    with connect() as c:
+        r=c.execute("SELECT * FROM players WHERE uid=?",(uid,)).fetchone()
+        if not r:
+            c.execute("INSERT INTO players(uid,username,last_energy) VALUES(?,?,?)",(uid,u.get("username",u.get("first_name","")),now))
+            r=c.execute("SELECT * FROM players WHERE uid=?",(uid,)).fetchone()
+        p=dict(r); e=min(p["max_energy"],p["energy"]+max(0,now-p["last_energy"])//3)
+        if e!=p["energy"]:
+            c.execute("UPDATE players SET energy=?,last_energy=? WHERE uid=?",(e,now,uid)); p["energy"]=e
+        for k in ("businesses","upgrades","unlocked"): p[k]=json.loads(p[k] or "{}")
+        p["user_id"]=p.pop("uid")
+        return p
 
-def response(row):
-    owned = json.loads(row["owned"])
-    income = sum(owned[i] * BUSINESSES[i]["profit"] for i in range(4))
-    return {"coins": int(row["coins"]), "energy": int(row["energy"]), "tap_power": row["tap_power"],
-            "owned": owned, "income": income, "level": 1 + int(max(0,row["coins"]-1000)//10000)}
-
-class Payload(BaseModel):
-    initData: str = ""
-    business: int | None = None
-
-@app.on_event("startup")
-def startup():
-    init_db()
+def save(uid,**v):
+    if not v:return
+    with connect() as c:
+        c.execute("UPDATE players SET "+",".join(k+"=?" for k in v)+" WHERE uid=?",(*v.values(),str(uid)))
 
 @app.get("/")
-def index():
-    return FileResponse(WEB_DIR / "index.html")
-
-@app.post("/api/state")
-def state(p: Payload):
-    user = verify_init_data(p.initData)
-    return response(get_player(user))
-
-@app.post("/api/tap")
-def tap(p: Payload):
-    user = verify_init_data(p.initData)
-    row = get_player(user)
-    if row["energy"] < 1:
-        raise HTTPException(400, "Not enough energy")
-    with db() as c:
-        c.execute("UPDATE players SET coins=coins+tap_power, energy=energy-1, updated=? WHERE user_id=?",
-                  (time.time(), int(user["id"])))
-        row = c.execute("SELECT * FROM players WHERE user_id=?", (int(user["id"]),)).fetchone()
-    return response(row)
-
-@app.post("/api/buy")
-def buy(p: Payload):
-    user = verify_init_data(p.initData)
-    if p.business is None or p.business not in range(4):
-        raise HTTPException(400, "Unknown business")
-    row = get_player(user)
-    b = BUSINESSES[p.business]
-    if row["coins"] < b["cost"]:
-        raise HTTPException(400, "Not enough KME")
-    owned = json.loads(row["owned"])
-    owned[p.business] += 1
-    with db() as c:
-        c.execute("UPDATE players SET coins=coins-?, owned=?, updated=? WHERE user_id=?",
-                  (b["cost"], json.dumps(owned), time.time(), int(user["id"])))
-        row = c.execute("SELECT * FROM players WHERE user_id=?", (int(user["id"]),)).fetchone()
-    return response(row)
-
+def home(): return FileResponse(ROOT/"web"/"index.html")
 @app.get("/health")
-def health():
-    return {"ok": True, "app": "KissMe Empire"}
+def health(): return {"ok":True,"game":"KissMe Empire 2.0"}
+@app.post("/api/state")
+async def get_state(req:Request):
+    d=await req.json(); u=user_from(d.get("initData",""))
+    if not u: raise HTTPException(401,"Telegram verification failed")
+    return state(u)
+@app.post("/api/action")
+async def action(req:Request):
+    d=await req.json(); u=user_from(d.get("initData",""))
+    if not u: raise HTTPException(401,"Telegram verification failed")
+    p=state(u); uid=p["user_id"]; a=d.get("action"); key=d.get("key","")
+    bal,energy,xp=p["balance"],p["energy"],p["xp"]
+    b,up,un=p["businesses"],p["upgrades"],p["unlocked"]; now=int(time.time())
+    if a=="tap":
+        if energy<1: raise HTTPException(400,"Недостаточно энергии")
+        bal+=1+up.get("tap",0); energy-=1; xp+=1
+    elif a=="buy":
+        catalog={"cafe":(500,"city",2),"shop":(1800,"city",7),"tower":(7000,"city",25),"villa":(25000,"island",80),"yacht":(80000,"island",220),"palace":(250000,"palace",700)}
+        if key not in catalog: raise HTTPException(400,"Неизвестный бизнес")
+        base,region,_=catalog[key]
+        if region not in un: raise HTTPException(400,"Сначала откройте регион")
+        price=int(base*1.65**b.get(key,0))
+        if bal<price: raise HTTPException(400,"Недостаточно KME")
+        bal-=price; b[key]=b.get(key,0)+1; xp+=25
+    elif a=="upgrade":
+        costs={"tap":1000,"energy":2500,"income":5000}
+        if key not in costs: raise HTTPException(400,"Неизвестное улучшение")
+        price=int(costs[key]*1.8**up.get(key,0))
+        if bal<price: raise HTTPException(400,"Недостаточно KME")
+        bal-=price; up[key]=up.get(key,0)+1
+        if key=="energy": p["max_energy"]+=250; energy=p["max_energy"]
+    elif a=="unlock":
+        gates={"island":(30000,5),"palace":(200000,12)}
+        if key not in gates: raise HTTPException(400,"Неизвестный регион")
+        price,lvl=gates[key]
+        if p["level"]<lvl: raise HTTPException(400,f"Нужен уровень {lvl}")
+        if key in un: raise HTTPException(400,"Уже открыто")
+        if bal<price: raise HTTPException(400,"Недостаточно KME")
+        bal-=price; un.append(key); xp+=100
+    elif a=="daily":
+        with connect() as c:
+            r=c.execute("SELECT claimed FROM daily WHERE uid=?",(uid,)).fetchone()
+            if r and now-r["claimed"]<86400: raise HTTPException(400,"Награда уже получена сегодня")
+            c.execute("INSERT OR REPLACE INTO daily VALUES(?,?)",(uid,now))
+        bal+=1500; xp+=50
+    elif a=="language":
+        save(uid,language="en" if key=="en" else "ru")
+        return state(u)
+    else: raise HTTPException(400,"Неизвестное действие")
+    rates={"cafe":2,"shop":7,"tower":25,"villa":80,"yacht":220,"palace":700}
+    passive=sum(b.get(k,0)*v for k,v in rates.items())
+    bal+=int(passive*(1+up.get("income",0)*.25))
+    level=p["level"]
+    while xp>=level*250: xp-=level*250; level+=1
+    save(uid,balance=bal,energy=energy,max_energy=p["max_energy"],xp=xp,level=level,
+         businesses=json.dumps(b),upgrades=json.dumps(up),unlocked=json.dumps(un),last_energy=now)
+    return state(u)

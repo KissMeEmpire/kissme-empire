@@ -1,3 +1,1 @@
-fastapi>=0.110,<1
-uvicorn[standard]>=0.27,<1
-python-telegram-bot>=21,<23
+fastapi==0.115.12\nuvicorn[standard]==0.34.0\npython-telegram-bot==21.10\n

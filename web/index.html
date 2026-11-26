@@ -1,7 +1,33 @@
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><meta name="theme-color" content="#080808"><title>KissMe Empire</title><script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{--g:#e7bd62}*{box-sizing:border-box}body{margin:0;padding:16px 14px 35px;background:radial-gradient(ellipse at top,#302313,#080808 55%);color:#f8f1e4;font-family:system-ui}.wrap{max-width:560px;margin:auto}.top{display:flex;justify-content:space-between;align-items:center}.brand,.section{color:var(--g);font-weight:900}.brand{letter-spacing:1px}.hero,.stat,.tile,.panel{background:linear-gradient(145deg,#211b12,#111);border:1px solid #574321;border-radius:18px;padding:15px}.hero{margin-top:14px}.eyebrow{font-size:11px;letter-spacing:2px;color:var(--g)}.level{font-size:27px;font-weight:900;margin:6px 0}.balance{font-size:36px;font-weight:900;color:var(--g);margin-top:12px}.sub,small{color:#b9ad93;font-size:12px}.bar{height:7px;background:#403728;border-radius:9px;margin-top:8px;overflow:hidden}.bar span{display:block;height:100%;background:linear-gradient(90deg,#98702a,#ffe19a)}.stats,.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}.stat b{display:block;color:var(--g);font-size:18px}.tapbox{text-align:center;margin:18px}.coin{width:150px;height:150px;border-radius:100%;border:3px solid #f4d27f;background:radial-gradient(circle at 35% 25%,#fff0b5,#bd8d34 55%,#50350c);font-size:38px;font-weight:1000;color:#1a1104;box-shadow:0 0 0 8px #d0a44a18}.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:18px 0}.tab,.lang{border:1px solid #705526;background:#1b1710;color:var(--g);padding:11px 5px;border-radius:12px;font-weight:800}.tab.active{background:#c49a47;color:#140e03}.section{margin:20px 2px 9px}.tile{padding:12px;min-height:120px}.emoji{font-size:24px}.tile b{display:block;margin:5px 0}.tile small{display:block;min-height:30px}.tile button,.action{width:100%;padding:10px;margin-top:8px;border:1px solid #d0a34c;border-radius:10px;background:linear-gradient(90deg,#94702e,#e6c16a);color:#160f04;font-weight:900}.tile button:disabled{opacity:.5}.hidden{display:none}.notice{text-align:center;color:#a99b7d;font-size:11px;margin:18px}.toast{display:none;position:fixed;bottom:20px;left:5%;width:90%;padding:12px;background:#292012;border:1px solid var(--g);border-radius:12px;text-align:center}@media(max-width:350px){.grid{grid-template-columns:1fr}}
-</style></head><body><div class="wrap">
+@keyframes flameFloat {
+  0%,100% { transform:translateY(0) rotate(-3deg) scale(1); }
+  50% { transform:translateY(-12px) rotate(3deg) scale(1.06); }
+}
+
+@keyframes flameGlow {
+  0%,100% { filter:drop-shadow(0 0 8px #e7bd62); }
+  50% { filter:drop-shadow(0 0 22px #ffb52e); }
+}
+
+@keyframes crownMove {
+  0%,100% { transform:rotate(-8deg); }
+  50% { transform:rotate(8deg); }
+}
+
+.flame-character {
+  display:inline-block;
+  font-size:75px;
+  animation:flameFloat 2s ease-in-out infinite,
+            flameGlow 2s ease-in-out infinite;
+}
+
+.flame-crown {
+  display:inline-block;
+  font-size:35px;
+  animation:crownMove 1.5s ease-in-out infinite;
+}</style></head><body><div class="wrap">
 <div class="top"><div class="brand">👑 KISSME EMPIRE</div><button class="lang" id="lang">RU / EN</button></div>
 <div class="hero"><div class="eyebrow">ТВОЯ ИМПЕРИЯ</div><div class="level" id="rank">Новичок · Ур. 1</div><div class="sub">Построй империю с нуля</div><div class="balance"><span id="balance">1 000</span> <small>KME</small></div><div class="sub">Опыт: <span id="xp">0</span> / <span id="need">250</span></div><div class="bar"><span id="xpbar"></span></div></div>
 <div class="stats"><div class="stat"><b id="energy">1000 / 1000</b><small>Энергия</small></div><div class="stat"><b id="income">0 KME</b><small>Пассивный доход за действие</small></div></div>

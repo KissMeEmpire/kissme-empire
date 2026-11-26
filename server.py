@@ -50,7 +50,10 @@ def save(uid,**v):
         c.execute("UPDATE players SET "+",".join(k+"=?" for k in v)+" WHERE uid=?",(*v.values(),str(uid)))
 
 @app.get("/")
-def home(): return FileResponse(ROOT/"web"/"index.html")
+def home(): return FileResponse(ROOT/"web"/"index.html") 
+@app.get("/C538937A-AB6E-46DF-B722-24CF1EE1D74A.png")
+def flame_image():
+    return FileResponse(ROOT/"web"/"C538937A-AB6E-46DF-B722-24CF1EE1D74A.png")
 @app.get("/health")
 def health(): return {"ok":True,"game":"KissMe Empire 2.0"}
 @app.post("/api/state")

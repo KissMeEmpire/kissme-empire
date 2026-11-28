@@ -17,14 +17,19 @@
 }
 
 .flame-character {
-  display:block;
-  width:190px;
-  height:190px;
-  object-fit:contain;
-  margin:0 auto;
-  animation:flameFloat 2s ease-in-out infinite,
-            flameGlow 2s ease-in-out infinite;
+  display: block;
+  width: 190px;
+  height: 190px;
+  object-fit: contain;
+  margin: 0 auto;
+  transform-origin: center bottom;
+  animation:
+    flameFloat 2s ease-in-out infinite,
+    flameGlow 2s ease-in-out infinite,
+    flameBreath 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 12px rgba(255, 90, 0, 0.7));
 }
+
 
 .flame-crown {
   display:inline-block;

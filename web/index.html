@@ -10,6 +10,15 @@
   0%,100% { filter:drop-shadow(0 0 8px #e7bd62); }
   50% { filter:drop-shadow(0 0 22px #ffb52e); }
 }
+  @keyframes flameBreath {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 12px rgba(255, 90, 0, 0.7));
+  }
+  50% {
+    transform: scale(1.06);
+    filter: drop-shadow(0 0 28px rgba(255, 120, 0, 1));
+  }
 
 @keyframes crownMove {
   0%,100% { transform:rotate(-8deg); }
